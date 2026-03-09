@@ -167,7 +167,7 @@ def update_api_key(env_key: str, new_value: str) -> bool:
         return False
 
     if not ENV_PATH.exists():
-        return False
+        ENV_PATH.write_text("", encoding="utf-8")
 
     # Update os.environ immediately
     os.environ[env_key] = new_value
