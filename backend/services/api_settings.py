@@ -157,6 +157,15 @@ def get_api_keys():
 
 def update_api_key(env_key: str, new_value: str) -> bool:
     """Update a single key in the .env file and in the current process env."""
+    valid_keys = {api["env_key"] for api in API_REGISTRY if api.get("env_key")}
+    if env_key not in valid_keys:
+        return False
+        
+    if not isinstance(new_value, str):
+        return False
+    if "\n" in new_value or "\r" in new_value:
+        return False
+
     if not ENV_PATH.exists():
         return False
 

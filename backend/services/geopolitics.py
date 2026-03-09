@@ -285,12 +285,17 @@ def fetch_global_military_incidents():
             headlines = [_url_to_headline(u) for u in urls]
             f["properties"]["_urls_list"] = urls
             f["properties"]["_headlines_list"] = headlines
+            import html
             # Keep html as fallback
             if urls:
-                links = [f'<div style="margin-bottom:6px;"><a href="{u}" target="_blank">{h}</a></div>' for u, h in zip(urls, headlines)]
+                links = []
+                for u, h in zip(urls, headlines):
+                    safe_url = u if u.startswith(('http://', 'https://')) else 'about:blank'
+                    safe_h = html.escape(h)
+                    links.append(f'<div style="margin-bottom:6px;"><a href="{safe_url}" target="_blank" rel="noopener noreferrer">{safe_h}</a></div>')
                 f["properties"]["html"] = ''.join(links)
             else:
-                f["properties"]["html"] = f["properties"]["name"]
+                f["properties"]["html"] = html.escape(f["properties"]["name"])
             f.pop("_loc_key", None)
 
         logger.info(f"GDELT multi-file parsed: {len(features)} conflict locations from {successful} files")
