@@ -824,36 +824,35 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
         return { type: 'FeatureCollection', features };
     }, [selectedEntity, data, dynamicRoute]);
 
-    // Trail history GeoJSON: render trails for ALL flights without a known route
+    // Trail history GeoJSON: shows where the SELECTED aircraft has been (only for no-route flights)
     const trailGeoJSON = useMemo(() => {
-        if (!data) return null;
-        const features: any[] = [];
-        const allLists = [
-            data.commercial_flights,
-            data.private_flights,
-            data.private_jets,
-            data.military_flights,
-            data.tracked_flights,
-        ];
-        for (const list of allLists) {
-            if (!list) continue;
-            for (const f of list) {
-                if (!f.trail || f.trail.length < 2) continue;
-                // Only show trails for flights without a known route
-                if (f.origin_name && f.origin_name !== 'UNKNOWN') continue;
-                if (!inView(f.lat, f.lng)) continue;
-                const coords = f.trail.map((p: number[]) => [p[1], p[0]]);
-                if (f.lat != null && f.lng != null) coords.push([f.lng, f.lat]);
-                features.push({
-                    type: 'Feature',
-                    properties: { type: 'trail' },
-                    geometry: { type: 'LineString', coordinates: coords }
-                });
-            }
+        if (!selectedEntity || !data) return null;
+
+        let entity = null;
+        if (selectedEntity.type === 'flight') entity = data?.commercial_flights?.[selectedEntity.id as number];
+        else if (selectedEntity.type === 'private_flight') entity = data?.private_flights?.[selectedEntity.id as number];
+        else if (selectedEntity.type === 'military_flight') entity = data?.military_flights?.[selectedEntity.id as number];
+        else if (selectedEntity.type === 'private_jet') entity = data?.private_jets?.[selectedEntity.id as number];
+        else if (selectedEntity.type === 'tracked_flight') entity = data?.tracked_flights?.[selectedEntity.id as number];
+
+        if (!entity || !entity.trail || entity.trail.length < 2) return null;
+        // Only show trail if this flight has no known route
+        if (entity.origin_name && entity.origin_name !== 'UNKNOWN') return null;
+
+        const coords = entity.trail.map((p: number[]) => [p[1], p[0]]);
+        if (entity.lat != null && entity.lng != null) {
+            coords.push([entity.lng, entity.lat]);
         }
-        if (features.length === 0) return null;
-        return { type: 'FeatureCollection', features };
-    }, [data, inView]);
+
+        return {
+            type: 'FeatureCollection',
+            features: [{
+                type: 'Feature',
+                properties: { type: 'trail' },
+                geometry: { type: 'LineString', coordinates: coords }
+            }]
+        };
+    }, [selectedEntity, data]);
 
     const spreadAlerts = useMemo(() => {
         if (!data?.news) return [];
