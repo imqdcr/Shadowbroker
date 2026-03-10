@@ -27,8 +27,6 @@ Built with **Next.js**, **MapLibre GL**, **FastAPI**, and **Python**, it's desig
 * Detect GPS jamming zones
 * Follow earthquakes and disasters in real time
 
-![Untitled](https://github.com/user-attachments/assets/5542715b-38fc-41ef-be64-d9f6373f9c0d)
-
 ---
 
 ## ⚡ Quick Start (Docker or Podman)
@@ -85,9 +83,6 @@ Do not append a trailing `.` to that command; Compose treats it as a service nam
   * Country profile (population, capital, languages, currencies, area)
   * Head of state & government type (Wikidata SPARQL)
   * Local Wikipedia summary with thumbnail
-    
-  ![Iran](https://github.com/user-attachments/assets/38e47c96-d371-4619-b03a-de68f0cc88e6)
-
 
 ### 🛰️ Satellite Imagery
 
