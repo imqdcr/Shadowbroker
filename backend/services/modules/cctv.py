@@ -1,0 +1,28 @@
+import logging
+
+logger = logging.getLogger(__name__)
+
+KEY = "cctv"
+TIER = "custom"
+INTERVAL_MINUTES = 1
+DEFAULT = []
+
+
+def fetch():
+    from services.cctv_pipeline import (
+        TFLJamCamIngestor, LTASingaporeIngestor,
+        AustinTXIngestor, NYCDOTIngestor, get_all_cameras,
+    )
+    logger.info("Running CCTV Pipeline Ingestion...")
+    for ingestor in (TFLJamCamIngestor, LTASingaporeIngestor, AustinTXIngestor, NYCDOTIngestor):
+        try:
+            ingestor().ingest()
+        except Exception as e:
+            logger.error(f"Failed {ingestor.__name__} cctv ingest: {e}")
+    try:
+        cameras = get_all_cameras()
+        logger.info(f"CCTV: {len(cameras)} cameras")
+        return cameras
+    except Exception as e:
+        logger.error(f"Error fetching cctv from DB: {e}")
+    return None

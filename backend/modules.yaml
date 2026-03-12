@@ -47,25 +47,25 @@ modules:
   - name: airports
     tier: slow
     run_once: true
-    enabled: false
+    enabled: true
 
   - name: cctv
     tier: custom
     interval_minutes: 1
-    enabled: false
+    enabled: true
 
   - name: liveuamap
     tier: custom
     interval_hours: 12
-    enabled: false
+    enabled: true
 
   - name: satellites
     tier: fast
-    enabled: false
+    enabled: true
 
   - name: ships
     tier: fast
-    enabled: false
+    enabled: true
 
   - name: flights
     tier: fast
