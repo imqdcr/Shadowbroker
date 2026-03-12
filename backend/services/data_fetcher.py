@@ -1,27 +1,23 @@
-import yfinance as yf
-import feedparser
 import requests
 import logging
 from services.network_utils import fetch_with_curl
 import csv
 import os
 import re
-import random
 import math
 import json
 import time
 from pathlib import Path
 import threading
-import io
 from apscheduler.schedulers.background import BackgroundScheduler
 import concurrent.futures
-import heapq
 from sgp4.api import Satrec, WGS72
 from sgp4.api import jday
 from datetime import datetime
 from dotenv import load_dotenv
 load_dotenv()
 from services.cctv_pipeline import init_db, TFLJamCamIngestor, LTASingaporeIngestor, AustinTXIngestor, NYCDOTIngestor, get_all_cameras
+from services.module_loader import loader
 
 logger = logging.getLogger(__name__)
 
@@ -140,6 +136,11 @@ def _mark_fresh(*keys):
 
 # Thread lock for safe reads/writes to latest_data
 _data_lock = threading.Lock()
+
+# Load modules from modules.yaml (enabled=true entries only).
+# Must happen after latest_data is defined so init_latest_data can write defaults.
+loader.load()
+loader.init_latest_data(latest_data)
 
 # ---------------------------------------------------------------------------
 # Plane-Alert DB — load tracked aircraft from JSON on startup
@@ -358,282 +359,7 @@ def enrich_with_tracked_names(flight: dict) -> dict:
     return flight
 
 
-def generate_machine_assessment(title, description, risk_score):
-    if risk_score < 8:
-        return None
-        
-    import random
-    keywords = [word.lower() for word in title.split() + description.split()]
-    
-    assessment = "ANALYSIS: "
-    if any(k in keywords for k in ["strike", "missile", "attack", "bomb", "drone"]):
-        assessment += f"{random.randint(75, 95)}% probability of kinetic escalation within 24 hours. Recommend immediate asset relocation from projected blast radius."
-    elif any(k in keywords for k in ["sanction", "trade", "economy", "tariff", "boycott"]):
-        assessment += f"Significant economic severing detected. {random.randint(60, 85)}% chance of reciprocal sanctions. Global supply chains may experience cascading latency."
-    elif any(k in keywords for k in ["cyber", "hack", "breach", "ddos", "ransomware"]):
-        assessment += f"Asymmetric digital warfare signature matched. {random.randint(80, 99)}% probability of infrastructure probing. Initiate air-gapping protocol for critical nodes."
-    elif any(k in keywords for k in ["troop", "deploy", "border", "navy", "carrier"]):
-        assessment += f"Force projection detected. {random.randint(70, 90)}% probability of theater escalation. Monitor adjacent maritime and airspace for mobilization."
-    else:
-        assessment += f"Anomalous geopolitical shift detected. Confidence interval {random.randint(60, 90)}%. Awaiting further signals intelligence for definitive vector."
-        
-    return assessment
 
-# ---------------------------------------------------------------------------
-# Keyword → coordinate mapping for geocoding news articles
-# ---------------------------------------------------------------------------
-_KEYWORD_COORDS = {
-    "venezuela": (7.119, -66.589),
-    "brazil": (-14.235, -51.925),
-    "argentina": (-38.416, -63.616),
-    "colombia": (4.570, -74.297),
-    "mexico": (23.634, -102.552),
-    "united states": (38.907, -77.036),
-    " usa ": (38.907, -77.036),
-    " us ": (38.907, -77.036),
-    "washington": (38.907, -77.036),
-    "canada": (56.130, -106.346),
-    "ukraine": (49.487, 31.272),
-    "kyiv": (50.450, 30.523),
-    "russia": (61.524, 105.318),
-    "moscow": (55.755, 37.617),
-    "israel": (31.046, 34.851),
-    "gaza": (31.416, 34.333),
-    "iran": (32.427, 53.688),
-    "lebanon": (33.854, 35.862),
-    "syria": (34.802, 38.996),
-    "yemen": (15.552, 48.516),
-    "china": (35.861, 104.195),
-    "beijing": (39.904, 116.407),
-    "taiwan": (23.697, 120.960),
-    "north korea": (40.339, 127.510),
-    "south korea": (35.907, 127.766),
-    "pyongyang": (39.039, 125.762),
-    "seoul": (37.566, 126.978),
-    "japan": (36.204, 138.252),
-    "tokyo": (35.676, 139.650),
-    "afghanistan": (33.939, 67.709),
-    "pakistan": (30.375, 69.345),
-    "india": (20.593, 78.962),
-    " uk ": (55.378, -3.435),
-    "london": (51.507, -0.127),
-    "france": (46.227, 2.213),
-    "paris": (48.856, 2.352),
-    "germany": (51.165, 10.451),
-    "berlin": (52.520, 13.405),
-    "sudan": (12.862, 30.217),
-    "congo": (-4.038, 21.758),
-    "south africa": (-30.559, 22.937),
-    "nigeria": (9.082, 8.675),
-    "egypt": (26.820, 30.802),
-    "zimbabwe": (-19.015, 29.154),
-    "kenya": (-1.292, 36.821),
-    "libya": (26.335, 17.228),
-    "mali": (17.570, -3.996),
-    "niger": (17.607, 8.081),
-    "somalia": (5.152, 46.199),
-    "ethiopia": (9.145, 40.489),
-    "australia": (-25.274, 133.775),
-    "middle east": (31.500, 34.800),
-    "europe": (48.800, 2.300),
-    "africa": (0.000, 25.000),
-    "america": (38.900, -77.000),
-    "south america": (-14.200, -51.900),
-    "asia": (34.000, 100.000),
-    "california": (36.778, -119.417),
-    "texas": (31.968, -99.901),
-    "florida": (27.994, -81.760),
-    "new york": (40.712, -74.006),
-    "virginia": (37.431, -78.656),
-    "british columbia": (53.726, -127.647),
-    "ontario": (51.253, -85.323),
-    "quebec": (52.939, -73.549),
-    "delhi": (28.704, 77.102),
-    "new delhi": (28.613, 77.209),
-    "mumbai": (19.076, 72.877),
-    "shanghai": (31.230, 121.473),
-    "hong kong": (22.319, 114.169),
-    "istanbul": (41.008, 28.978),
-    "dubai": (25.204, 55.270),
-    "singapore": (1.352, 103.819),
-    "bangkok": (13.756, 100.501),
-    "jakarta": (-6.208, 106.845),
-}
-
-def fetch_news():
-    from services.news_feed_config import get_feeds
-    feed_config = get_feeds()
-    feeds = {f["name"]: f["url"] for f in feed_config}
-    source_weights = {f["name"]: f["weight"] for f in feed_config}
-    
-    clusters = {}
-    
-    # Fetch all feeds in parallel for speed (each has a 10s timeout)
-    def _fetch_feed(item):
-        source_name, url = item
-        try:
-            xml_data = fetch_with_curl(url, timeout=10).text
-            return source_name, feedparser.parse(xml_data)
-        except Exception as e:
-            logger.warning(f"Feed {source_name} failed: {e}")
-            return source_name, None
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=len(feeds)) as pool:
-        feed_results = list(pool.map(_fetch_feed, feeds.items()))
-
-    for source_name, feed in feed_results:
-        if not feed:
-            continue
-        for entry in feed.entries[:5]:
-            title = entry.get('title', '')
-            summary = entry.get('summary', '')
-            
-            # Filter out Earthquakes/seismic events (redundant with dedicated EQ layer)
-            _seismic_kw = ["earthquake", "seismic", "quake", "tremor", "magnitude", "richter"]
-            _text_lower = (title + " " + summary).lower()
-            if any(kw in _text_lower for kw in _seismic_kw):
-                continue
-            
-            # GDACS-specific risk score mapping
-            if source_name == "GDACS":
-                alert_level = entry.get("gdacs_alertlevel", "Green")
-                if alert_level == "Red": risk_score = 10
-                elif alert_level == "Orange": risk_score = 7
-                else: risk_score = 4
-            else:
-                risk_keywords = ['war', 'missile', 'strike', 'attack', 'crisis', 'tension', 'military', 'conflict', 'defense', 'clash', 'nuclear']
-                text = (title + " " + summary).lower()
-                
-                risk_score = 1
-                for kw in risk_keywords:
-                    if kw in text:
-                        risk_score += 2
-                
-                risk_score = min(10, risk_score)
-            
-            
-            keyword_coords = _KEYWORD_COORDS
-            
-            lat, lng = None, None
-            
-            # Try GeoRSS Extraction first (common in GDACS)
-            if 'georss_point' in entry:
-                geo_parts = entry['georss_point'].split()
-                if len(geo_parts) == 2:
-                    lat, lng = float(geo_parts[0]), float(geo_parts[1])
-            elif 'where' in entry and hasattr(entry['where'], 'coordinates'):
-                # Some feeds use the 'where' attribute
-                coords = entry['where'].coordinates
-                lat, lng = coords[1], coords[0] # Usually lon, lat in GeoJSON style points
-            
-            # Fallback to Keyword Mapping
-            if lat is None:
-                padded_text = f" {text} "
-                for kw, coords in keyword_coords.items():
-                    if kw.startswith(" ") or kw.endswith(" "):
-                        if kw in padded_text:
-                            lat, lng = coords
-                            break
-                    else:
-                        if re.search(r'\b' + re.escape(kw) + r'\b', text):
-                            lat, lng = coords
-                            break
-                        
-            # If mapped, check if there is an existing cluster within ~400km (4 degrees) to merge them
-            if lat is not None:
-                key = None
-                for existing_key in clusters.keys():
-                    if "," in existing_key:
-                        parts = existing_key.split(",")
-                        try:
-                            elat, elng = float(parts[0]), float(parts[1])
-                            if ((lat - elat)**2 + (lng - elng)**2)**0.5 < 4.0:
-                                key = existing_key
-                                break
-                        except ValueError:
-                            pass
-                if key is None:
-                    key = f"{lat},{lng}"
-            else:
-                key = title
-                
-            if key not in clusters:
-                clusters[key] = []
-                
-            clusters[key].append({
-                "title": title,
-                "link": entry.get('link', ''),
-                "published": entry.get('published', ''),
-                "source": source_name,
-                "risk_score": risk_score,
-                "coords": [lat, lng] if lat is not None else None
-            })
-            
-            
-    news_items = []
-    for key, articles in clusters.items():
-        # Sort internal articles primarily by risk score (highest first), then by source hierarchy
-        articles.sort(key=lambda x: (x['risk_score'], source_weights.get(x["source"], 0)), reverse=True)
-        max_risk = articles[0]['risk_score']
-        
-        top_article = articles[0]
-        news_items.append({
-            "title": top_article["title"],
-            "link": top_article["link"],
-            "published": top_article["published"],
-            "source": top_article["source"],
-            "risk_score": max_risk,
-            "coords": top_article["coords"],
-            "cluster_count": len(articles),
-            "articles": articles,
-            "machine_assessment": generate_machine_assessment(top_article["title"], "", max_risk)
-        })
-
-    news_items.sort(key=lambda x: x['risk_score'], reverse=True)
-    latest_data['news'] = news_items
-    _mark_fresh("news")
-
-def _fetch_single_ticker(symbol: str, period: str = "2d"):
-    """Fetch a single yfinance ticker. Returns (symbol, data_dict) or (symbol, None)."""
-    try:
-        ticker = yf.Ticker(symbol)
-        hist = ticker.history(period=period)
-        if len(hist) >= 1:
-            current_price = hist['Close'].iloc[-1]
-            prev_close = hist['Close'].iloc[0] if len(hist) > 1 else current_price
-            change_percent = ((current_price - prev_close) / prev_close) * 100 if prev_close else 0
-            return symbol, {
-                "price": round(float(current_price), 2),
-                "change_percent": round(float(change_percent), 2),
-                "up": bool(change_percent >= 0)
-            }
-    except Exception as e:
-        logger.warning(f"Could not fetch data for {symbol}: {e}")
-    return symbol, None
-
-
-def fetch_defense_stocks():
-    tickers = ["RTX", "LMT", "NOC", "GD", "BA", "PLTR"]
-    try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
-            results = pool.map(lambda t: _fetch_single_ticker(t, "2d"), tickers)
-        stocks_data = {sym: data for sym, data in results if data}
-        latest_data['stocks'] = stocks_data
-        _mark_fresh("stocks")
-    except Exception as e:
-        logger.error(f"Error fetching stocks: {e}")
-
-def fetch_oil_prices():
-    # CL=F is Crude Oil, BZ=F is Brent Crude
-    tickers = {"WTI Crude": "CL=F", "Brent Crude": "BZ=F"}
-    try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
-            results = pool.map(lambda item: (_fetch_single_ticker(item[1], "5d")[1], item[0]), tickers.items())
-        oil_data = {name: data for data, name in results if data}
-        latest_data['oil'] = oil_data
-        _mark_fresh("oil")
-    except Exception as e:
-        logger.error(f"Error fetching oil: {e}")
 
 dynamic_routes_cache = {}  # callsign -> {data..., _ts: timestamp}
 routes_fetch_in_progress = False
@@ -1470,18 +1196,6 @@ def fetch_military_flights():
     latest_data['tracked_flights'] = updated_tracked
     logger.info(f"Tracked flights: {len(updated_tracked)} total ({len(tracked_mil)} from military)")
 
-def fetch_weather():
-    try:
-        url = "https://api.rainviewer.com/public/weather-maps.json"
-        response = fetch_with_curl(url, timeout=10)
-        if response.status_code == 200:
-            data = response.json()
-            if "radar" in data and "past" in data["radar"]:
-                latest_time = data["radar"]["past"][-1]["time"]
-                latest_data["weather"] = {"time": latest_time, "host": data.get("host", "https://tilecache.rainviewer.com")}
-                _mark_fresh("weather")
-    except Exception as e:
-        logger.error(f"Error fetching weather: {e}")
 
 def fetch_cctv():
     try:
@@ -1491,372 +1205,14 @@ def fetch_cctv():
         logger.error(f"Error fetching cctv from DB: {e}")
         latest_data["cctv"] = []
 
-def fetch_kiwisdr():
-    try:
-        from services.kiwisdr_fetcher import fetch_kiwisdr_nodes
-        latest_data["kiwisdr"] = fetch_kiwisdr_nodes()
-        _mark_fresh("kiwisdr")
-    except Exception as e:
-        logger.error(f"Error fetching KiwiSDR nodes: {e}")
-        latest_data["kiwisdr"] = []
-
-def fetch_firms_fires():
-    """Fetch global fire/thermal anomalies from NASA FIRMS (NOAA-20 VIIRS, 24h, no key needed)."""
-    fires = []
-    try:
-        url = "https://firms.modaps.eosdis.nasa.gov/data/active_fire/noaa-20-viirs-c2/csv/J1_VIIRS_C2_Global_24h.csv"
-        response = fetch_with_curl(url, timeout=30)
-        if response.status_code == 200:
-            import csv
-            import io
-            reader = csv.DictReader(io.StringIO(response.text))
-            all_rows = []
-            for row in reader:
-                try:
-                    lat = float(row.get("latitude", 0))
-                    lng = float(row.get("longitude", 0))
-                    frp = float(row.get("frp", 0))  # Fire Radiative Power (MW)
-                    conf = row.get("confidence", "nominal")
-                    daynight = row.get("daynight", "")
-                    bright = float(row.get("bright_ti4", 0))
-                    all_rows.append({
-                        "lat": lat,
-                        "lng": lng,
-                        "frp": frp,
-                        "brightness": bright,
-                        "confidence": conf,
-                        "daynight": daynight,
-                        "acq_date": row.get("acq_date", ""),
-                        "acq_time": row.get("acq_time", ""),
-                    })
-                except (ValueError, TypeError):
-                    continue
-            # Keep top 5000 by FRP (most intense fires first) — heapq is O(n) vs O(n log n) sort
-            fires = heapq.nlargest(5000, all_rows, key=lambda x: x["frp"])
-        logger.info(f"FIRMS fires: {len(fires)} hotspots (from {response.status_code})")
-    except Exception as e:
-        logger.error(f"Error fetching FIRMS fires: {e}")
-    latest_data["firms_fires"] = fires
-    if fires:
-        _mark_fresh("firms_fires")
-
-def fetch_space_weather():
-    """Fetch NOAA SWPC Kp index and recent solar events."""
-    try:
-        kp_resp = fetch_with_curl("https://services.swpc.noaa.gov/json/planetary_k_index_1m.json", timeout=10)
-        kp_value = None
-        kp_text = "QUIET"
-        if kp_resp.status_code == 200:
-            kp_data = kp_resp.json()
-            if kp_data:
-                latest_kp = kp_data[-1]
-                kp_value = float(latest_kp.get("kp_index", 0))
-                if kp_value >= 7:
-                    kp_text = f"STORM G{min(int(kp_value) - 4, 5)}"
-                elif kp_value >= 5:
-                    kp_text = f"STORM G{min(int(kp_value) - 4, 5)}"
-                elif kp_value >= 4:
-                    kp_text = "ACTIVE"
-                elif kp_value >= 3:
-                    kp_text = "UNSETTLED"
-
-        events = []
-        ev_resp = fetch_with_curl("https://services.swpc.noaa.gov/json/edited_events.json", timeout=10)
-        if ev_resp.status_code == 200:
-            all_events = ev_resp.json()
-            for ev in all_events[-10:]:
-                events.append({
-                    "type": ev.get("type", ""),
-                    "begin": ev.get("begin", ""),
-                    "end": ev.get("end", ""),
-                    "classtype": ev.get("classtype", ""),
-                })
-
-        latest_data["space_weather"] = {
-            "kp_index": kp_value,
-            "kp_text": kp_text,
-            "events": events,
-        }
-        _mark_fresh("space_weather")
-        logger.info(f"Space weather: Kp={kp_value} ({kp_text}), {len(events)} events")
-    except Exception as e:
-        logger.error(f"Error fetching space weather: {e}")
-
-# Cache geocoded region coordinates so we only hit Nominatim once per region
-_region_geocode_cache: dict = {}
-
-def _geocode_region(region_name: str, country_name: str) -> tuple:
-    """Geocode a region using OpenStreetMap Nominatim (cached, respects rate limit)."""
-    cache_key = f"{region_name}|{country_name}"
-    if cache_key in _region_geocode_cache:
-        return _region_geocode_cache[cache_key]
-    try:
-        import urllib.parse
-        query = urllib.parse.quote(f"{region_name}, {country_name}")
-        url = f"https://nominatim.openstreetmap.org/search?q={query}&format=json&limit=1"
-        response = fetch_with_curl(url, timeout=8, headers={"User-Agent": "ShadowBroker-OSINT/1.0"})
-        if response.status_code == 200:
-            results = response.json()
-            if results:
-                lat = float(results[0]["lat"])
-                lon = float(results[0]["lon"])
-                _region_geocode_cache[cache_key] = (lat, lon)
-                return (lat, lon)
-    except Exception:
-        pass
-    _region_geocode_cache[cache_key] = None
-    return None
-
-def fetch_internet_outages():
-    """Fetch regional internet outage alerts from IODA (Georgia Tech).
-    Region-level only — higher fidelity than country-level. If an entire country
-    is down, all its regions will show up individually.
-
-    Only uses reliable datasources (bgp, ping-slash24) that measure actual
-    connectivity. Excludes merit-nt (network telescope with tiny sample sizes
-    that produces wildly misleading percentages for large regions)."""
-    # Datasources that actually measure real internet connectivity
-    RELIABLE_DATASOURCES = {"bgp", "ping-slash24"}
-    outages = []
-    try:
-        now = int(time.time())
-        start = now - 86400
-        url = f"https://api.ioda.inetintel.cc.gatech.edu/v2/outages/alerts?from={start}&until={now}&limit=500"
-        response = fetch_with_curl(url, timeout=15)
-        if response.status_code == 200:
-            data = response.json()
-            alerts = data.get("data", [])
-            # Collect region-level outages (deduplicate by region code, keep worst)
-            region_outages = {}
-            for alert in alerts:
-                entity = alert.get("entity", {})
-                etype = entity.get("type", "")
-                level = alert.get("level", "")
-                if level == "normal" or etype != "region":
-                    continue
-                datasource = alert.get("datasource", "")
-                if datasource not in RELIABLE_DATASOURCES:
-                    continue  # Skip merit-nt and other unreliable sources
-                code = entity.get("code", "")
-                name = entity.get("name", "")
-                attrs = entity.get("attrs", {})
-                country_code = attrs.get("country_code", "")
-                country_name = attrs.get("country_name", "")
-                value = alert.get("value", 0)
-                history_value = alert.get("historyValue", 0)
-                severity = 0
-                if history_value and history_value > 0:
-                    severity = round((1 - value / history_value) * 100)
-                severity = max(0, min(severity, 100))
-                if severity < 10:
-                    continue  # Skip minor fluctuations (<10% is normal jitter)
-                if code not in region_outages or severity > region_outages[code]["severity"]:
-                    region_outages[code] = {
-                        "region_code": code,
-                        "region_name": name,
-                        "country_code": country_code,
-                        "country_name": country_name,
-                        "level": level,
-                        "datasource": datasource,
-                        "severity": severity,
-                    }
-            # Geocode regions and build final list
-            geocoded = []
-            for rcode, r in region_outages.items():
-                coords = _geocode_region(r["region_name"], r["country_name"])
-                if coords:
-                    r["lat"] = coords[0]
-                    r["lng"] = coords[1]
-                    geocoded.append(r)
-            # Keep top 100 by severity
-            outages = heapq.nlargest(100, geocoded, key=lambda x: x["severity"])
-        logger.info(f"Internet outages: {len(outages)} regions affected")
-    except Exception as e:
-        logger.error(f"Error fetching internet outages: {e}")
-    latest_data["internet_outages"] = outages
-    if outages:
-        _mark_fresh("internet_outages")
-
-_DC_CACHE_PATH = Path(__file__).parent.parent / "data" / "datacenters.json"
-_DC_URL = "https://raw.githubusercontent.com/Ringmast4r/Data-Center-Map---Global/1f290297c6a11454dc7a47bf95aef7cf0fe1d34c/datacenters_cleaned.json"
-
-# Country bounding boxes (lat_min, lat_max, lng_min, lng_max) for coordinate validation.
-# The source dataset has abs(lat) for all Southern Hemisphere entries, so we fix the sign
-# and then validate the result falls within the country's bounding box.
-_COUNTRY_BBOX: dict[str, tuple[float, float, float, float]] = {
-    "Argentina": (-55, -21, -74, -53), "Australia": (-44, -10, 112, 154),
-    "Bolivia": (-23, -9, -70, -57), "Brazil": (-34, 6, -74, -34),
-    "Chile": (-56, -17, -76, -66), "Colombia": (-5, 13, -82, -66),
-    "Ecuador": (-5, 2, -81, -75), "Indonesia": (-11, 6, 95, 141),
-    "Kenya": (-5, 5, 34, 42), "Madagascar": (-26, -12, 43, 51),
-    "Mozambique": (-27, -10, 30, 41), "New Zealand": (-47, -34, 166, 179),
-    "Paraguay": (-28, -19, -63, -54), "Peru": (-18, 0, -82, -68),
-    "South Africa": (-35, -22, 16, 33), "Tanzania": (-12, -1, 29, 41),
-    "Uruguay": (-35, -30, -59, -53), "Zimbabwe": (-23, -15, 25, 34),
-    # Northern-hemisphere countries for validation only
-    "United States": (24, 72, -180, -65), "Canada": (41, 84, -141, -52),
-    "United Kingdom": (49, 61, -9, 2), "Germany": (47, 55, 5, 16),
-    "France": (41, 51, -5, 10), "Japan": (24, 46, 123, 146),
-    "India": (6, 36, 68, 98), "China": (18, 54, 73, 135),
-    "Singapore": (1, 2, 103, 105), "Spain": (36, 44, -10, 5),
-    "Netherlands": (50, 54, 3, 8), "Sweden": (55, 70, 11, 25),
-    "Italy": (36, 47, 6, 19), "Russia": (41, 82, 19, 180),
-    "Mexico": (14, 33, -118, -86), "Nigeria": (4, 14, 2, 15),
-    "Thailand": (5, 21, 97, 106), "Malaysia": (0, 8, 99, 120),
-    "Philippines": (4, 21, 116, 127), "South Korea": (33, 39, 124, 132),
-    "Taiwan": (21, 26, 119, 123), "Hong Kong": (22, 23, 113, 115),
-    "Vietnam": (8, 24, 102, 110), "Poland": (49, 55, 14, 25),
-    "Switzerland": (45, 48, 5, 11), "Austria": (46, 49, 9, 17),
-    "Belgium": (49, 52, 2, 7), "Denmark": (54, 58, 8, 16),
-    "Finland": (59, 70, 20, 32), "Norway": (57, 72, 4, 32),
-    "Ireland": (51, 56, -11, -5), "Portugal": (36, 42, -10, -6),
-    "Turkey": (35, 42, 25, 45), "Israel": (29, 34, 34, 36),
-    "UAE": (22, 27, 51, 56), "Saudi Arabia": (16, 33, 34, 56),
-}
-
-# Countries whose DCs always sit south of the equator
-_SOUTHERN_COUNTRIES = {
-    "Argentina", "Australia", "Bolivia", "Brazil", "Chile", "Madagascar",
-    "Mozambique", "New Zealand", "Paraguay", "Peru", "South Africa",
-    "Tanzania", "Uruguay", "Zimbabwe",
-}
 
 
-def _fix_dc_coords(lat: float, lng: float, country: str) -> tuple[float, float] | None:
-    """Fix and validate data-center coordinates against the stated country.
-
-    The source dataset stores abs(lat) for Southern-Hemisphere entries.
-    We negate lat when the country is in the Southern Hemisphere, then
-    validate the result falls within the country bounding box (if known).
-    Returns corrected (lat, lng) or None if the coords are clearly wrong.
-    """
-    # Fix Southern Hemisphere sign
-    if country in _SOUTHERN_COUNTRIES and lat > 0:
-        lat = -lat
-
-    bbox = _COUNTRY_BBOX.get(country)
-    if bbox:
-        lat_min, lat_max, lng_min, lng_max = bbox
-        if lat_min <= lat <= lat_max and lng_min <= lng <= lng_max:
-            return lat, lng
-        # Try swapping sign as last resort (some entries are just wrong sign)
-        if lat_min <= -lat <= lat_max and lng_min <= lng <= lng_max:
-            return -lat, lng
-        # Coords don't match country at all — drop the entry
-        return None
-
-    # No bbox for this country — basic sanity only
-    return lat, lng
 
 
-def fetch_datacenters():
-    """Load data center locations (static dataset, cached locally after first fetch)."""
-    dcs = []
-    try:
-        raw = None
-        # Use local cache if it exists and is less than 7 days old
-        if _DC_CACHE_PATH.exists():
-            age_days = (time.time() - _DC_CACHE_PATH.stat().st_mtime) / 86400
-            if age_days < 7:
-                raw = json.loads(_DC_CACHE_PATH.read_text(encoding="utf-8"))
-        # Otherwise fetch from GitHub
-        if raw is None:
-            resp = fetch_with_curl(_DC_URL, timeout=20)
-            if resp.status_code == 200:
-                raw = resp.json()
-                _DC_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
-                _DC_CACHE_PATH.write_text(json.dumps(raw), encoding="utf-8")
-        if raw:
-            dropped = 0
-            for entry in raw:
-                coords = entry.get("city_coords")
-                if not coords or not isinstance(coords, list) or len(coords) < 2:
-                    continue
-                lat, lng = coords[0], coords[1]
-                if not (-90 <= lat <= 90 and -180 <= lng <= 180):
-                    continue
-                country = entry.get("country", "")
-                fixed = _fix_dc_coords(lat, lng, country)
-                if fixed is None:
-                    dropped += 1
-                    continue
-                lat, lng = fixed
-                dcs.append({
-                    "name": entry.get("name", "Unknown"),
-                    "company": entry.get("company", ""),
-                    "city": entry.get("city", ""),
-                    "country": country,
-                    "lat": lat,
-                    "lng": lng,
-                })
-            if dropped:
-                logger.info(f"Data centers: dropped {dropped} entries with mismatched coordinates")
-        logger.info(f"Data centers: {len(dcs)} with valid coordinates (from {'cache' if _DC_CACHE_PATH.exists() else 'GitHub'})")
-    except Exception as e:
-        logger.error(f"Error fetching data centers: {e}")
-    latest_data["datacenters"] = dcs
-    if dcs:
-        _mark_fresh("datacenters")
-
-def fetch_bikeshare():
-    bikes = []
-    try:
-        # CitiBike NYC Free GBFS Feed
-        info_url = "https://gbfs.citibikenyc.com/gbfs/en/station_information.json"
-        status_url = "https://gbfs.citibikenyc.com/gbfs/en/station_status.json"
-        
-        info_res = fetch_with_curl(info_url, timeout=10)
-        status_res = fetch_with_curl(status_url, timeout=10)
-        
-        if info_res.status_code == 200 and status_res.status_code == 200:
-            stations = info_res.json()["data"]["stations"]
-            statuses = status_res.json()["data"]["stations"]
-            
-            # Map statuses
-            status_map = {s["station_id"]: s for s in statuses}
-            
-            # Top 100 stations for performance
-            for st in stations[:100]:
-                sid = st["station_id"]
-                stat = status_map.get(sid, {})
-                bikes.append({
-                    "id": sid,
-                    "name": st.get("name", "Station"),
-                    "lat": st.get("lat", 0),
-                    "lng": st.get("lon", 0),
-                    "capacity": st.get("capacity", 0),
-                    "available": stat.get("num_bikes_available", 0)
-                })
-    except Exception as e:
-        logger.error(f"Error fetching bikeshare: {e}")
-    latest_data["bikeshare"] = bikes
 
 def fetch_traffic():
     # Deprecated: TomTom warning signs removed from UI to declutter CCTV mesh
     latest_data["traffic"] = []
-
-def fetch_earthquakes():
-    quakes = []
-    try:
-        url = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_day.geojson"
-        response = fetch_with_curl(url, timeout=10)
-        if response.status_code == 200:
-            features = response.json().get("features", [])
-            for f in features[:50]:
-                mag = f["properties"]["mag"]
-                lng, lat, depth = f["geometry"]["coordinates"]
-                quakes.append({
-                    "id": f["id"],
-                    "mag": mag,
-                    "lat": lat,
-                    "lng": lng,
-                    "place": f["properties"]["place"]
-                })
-    except Exception as e:
-        logger.error(f"Error fetching earthquakes: {e}")
-    latest_data["earthquakes"] = quakes
-    if quakes:
-        _mark_fresh("earthquakes")
 
 # Satellite GP data cache — re-download from CelesTrak only every 30 minutes
 _sat_gp_cache = {"data": None, "last_fetch": 0}
@@ -2301,22 +1657,6 @@ def fetch_airports():
             
     latest_data['airports'] = cached_airports
 
-from services.geopolitics import fetch_ukraine_frontlines, fetch_global_military_incidents
-
-def fetch_geopolitics():
-    logger.info("Fetching Geopolitics data...")
-    try:
-        frontlines = fetch_ukraine_frontlines()
-        if frontlines:
-            latest_data['frontlines'] = frontlines
-            _mark_fresh("frontlines")
-
-        gdelt = fetch_global_military_incidents()
-        if gdelt is not None:
-            latest_data['gdelt'] = gdelt
-            _mark_fresh("gdelt")
-    except Exception as e:
-        logger.error(f"Error fetching geopolitics: {e}")
 
 def update_liveuamap():
     logger.info("Running scheduled Liveuamap scraper...")
@@ -2341,6 +1681,8 @@ def update_fast_data():
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(fast_funcs)) as executor:
         futures = [executor.submit(func) for func in fast_funcs]
         concurrent.futures.wait(futures)
+    # Run any fast-tier module-loader modules (no-op until modules are enabled)
+    loader.run_fast_modules()
     with _data_lock:
         latest_data['last_updated'] = datetime.utcnow().isoformat()
     logger.info("Fast-tier update complete.")
@@ -2349,22 +1691,13 @@ def update_slow_data():
     """Slow-tier: feeds that change infrequently (every 30min)."""
     logger.info("Slow-tier data update starting...")
     slow_funcs = [
-        fetch_news,
-        fetch_defense_stocks,
-        fetch_oil_prices,
-        fetch_weather,
         fetch_cctv,
-        fetch_earthquakes,
-        fetch_geopolitics,
-        fetch_kiwisdr,
-        fetch_space_weather,
-        fetch_internet_outages,
-        fetch_firms_fires,
-        fetch_datacenters,
     ]
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(slow_funcs)) as executor:
         futures = [executor.submit(func) for func in slow_funcs]
         concurrent.futures.wait(futures)
+    # Run any slow-tier module-loader modules (no-op until modules are enabled)
+    loader.run_slow_modules()
     logger.info("Slow-tier update complete.")
 
 def update_all_data():
@@ -2415,12 +1748,13 @@ def start_scheduler():
     scheduler.add_job(update_liveuamap, 'date', run_date=datetime.now())
     scheduler.add_job(update_liveuamap, 'interval', hours=12)
     
-    # Geopolitics (frontlines) aligned with slow-data tier
-    scheduler.add_job(fetch_geopolitics, 'interval', minutes=30)
-    
+    # Start any module-loader modules (no-op until modules.yaml entries are enabled)
+    loader.start_all(None, latest_data, _data_lock, _mark_fresh, scheduler)
+
     scheduler.start()
 
 def stop_scheduler():
+    loader.stop_all()
     scheduler.shutdown()
 
 def get_latest_data():
