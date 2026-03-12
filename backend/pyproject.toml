@@ -1,0 +1,31 @@
+[project]
+name = "shadowbroker-backend"
+version = "0.8.0"
+description = "Shadowbroker backend — modular geopolitical intelligence platform"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.103.1",
+    "uvicorn>=0.23.2",
+    "yfinance>=0.2.40",
+    "feedparser==6.0.10",
+    "legacy-cgi>=2.6",
+    "requests==2.31.0",
+    "apscheduler==3.10.3",
+    "pydantic>=2.3.0",
+    "pydantic-settings>=2.0.3",
+    "playwright>=1.58.0",
+    "beautifulsoup4>=4.12.0",
+    "cachetools>=5.3",
+    "cloudscraper>=1.2.71",
+    "python-dotenv>=1.0",
+    "lxml>=5.0",
+    "reverse_geocoder>=1.5",
+    "sgp4>=2.23",
+    "geopy>=2.4.0",
+    "pytz>=2023.3",
+    "pystac-client>=0.7.0",
+    "pyyaml>=6.0",
+]
+
+[tool.uv]
+package = false
