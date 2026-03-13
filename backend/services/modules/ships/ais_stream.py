@@ -212,7 +212,7 @@ def _ais_stream_loop():
     import subprocess
     import os
 
-    proxy_script = os.path.join(os.path.dirname(os.path.dirname(__file__)), "ais_proxy.js")
+    proxy_script = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "ais_proxy.js")
     backoff = 1  # Exponential backoff starting at 1 second
 
     while _ws_running:
