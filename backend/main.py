@@ -47,6 +47,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from services.data_fetcher import (get_latest_data, source_timestamps,
                                    start_scheduler, stop_scheduler)
+from services.module_loader import loader
 from services.modules.ships.ais_stream import start_ais_stream, stop_ais_stream
 from services.modules.ships.carrier_tracker import (start_carrier_tracker,
                                                     stop_carrier_tracker)
@@ -140,44 +141,19 @@ def _etag_response(request: Request, payload: dict, prefix: str = "", default=No
 @app.get("/api/live-data/fast")
 async def live_data_fast(request: Request):
     d = get_latest_data()
-    payload = {
-        "commercial_flights": d.get("commercial_flights", []),
-        "military_flights": d.get("military_flights", []),
-        "private_flights": d.get("private_flights", []),
-        "private_jets": d.get("private_jets", []),
-        "tracked_flights": d.get("tracked_flights", []),
-        "ships": d.get("ships", []),
-        "cctv": d.get("cctv", []),
-        "uavs": d.get("uavs", []),
-        "liveuamap": d.get("liveuamap", []),
-        "gps_jamming": d.get("gps_jamming", []),
-        "freshness": dict(source_timestamps),
-    }
+    keys = loader.build_fast_keys()
+    payload = {k: d.get(k) for k in keys}
+    payload["freshness"] = dict(source_timestamps)
     return _etag_response(request, payload, prefix="fast|")
 
 
 @app.get("/api/live-data/slow")
 async def live_data_slow(request: Request):
     d = get_latest_data()
-    payload = {
-        "last_updated": d.get("last_updated"),
-        "news": d.get("news", []),
-        "stocks": d.get("stocks", {}),
-        "oil": d.get("oil", {}),
-        "weather": d.get("weather"),
-        "traffic": d.get("traffic", []),
-        "earthquakes": d.get("earthquakes", []),
-        "frontlines": d.get("frontlines"),
-        "gdelt": d.get("gdelt", []),
-        "airports": d.get("airports", []),
-        "satellites": d.get("satellites", []),
-        "kiwisdr": d.get("kiwisdr", []),
-        "space_weather": d.get("space_weather"),
-        "internet_outages": d.get("internet_outages", []),
-        "firms_fires": d.get("firms_fires", []),
-        "datacenters": d.get("datacenters", []),
-        "freshness": dict(source_timestamps),
-    }
+    keys = loader.build_slow_keys()
+    payload = {k: d.get(k) for k in keys}
+    payload["last_updated"] = d.get("last_updated")
+    payload["freshness"] = dict(source_timestamps)
     return _etag_response(request, payload, prefix="slow|", default=str)
 
 
@@ -214,6 +190,39 @@ async def health_check():
 
 
 _start_time = __import__("time").time()
+
+
+@app.get("/api/health/detail")
+async def health_detail():
+    import time
+
+    d = get_latest_data()
+    sources = {}
+    for k, v in d.items():
+        if k == "last_updated":
+            continue
+        if isinstance(v, list):
+            sources[k] = {
+                "type": "list",
+                "count": len(v),
+                "fresh": source_timestamps.get(k),
+            }
+        elif isinstance(v, dict):
+            sources[k] = {
+                "type": "dict",
+                "keys": len(v),
+                "fresh": source_timestamps.get(k),
+            }
+        elif v is None:
+            sources[k] = {"type": "null", "fresh": source_timestamps.get(k)}
+        else:
+            sources[k] = {"type": type(v).__name__, "fresh": source_timestamps.get(k)}
+    return {
+        "status": "ok",
+        "uptime_seconds": round(time.time() - _start_time),
+        "sources": sources,
+    }
+
 
 from services.radio_intercept import (find_nearest_openmhz_system,
                                       get_openmhz_systems,
