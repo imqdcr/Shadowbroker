@@ -1,10 +1,11 @@
-import logging
 import json
-import subprocess
+import logging
 import shutil
+import subprocess
 import time
-import requests
 from urllib.parse import urlparse
+
+import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -63,6 +64,10 @@ def fetch_with_curl(url, method="GET", json_data=None, timeout=15, headers=None)
                 res = _session.post(url, json=json_data, timeout=timeout, headers=default_headers)
             else:
                 res = _session.get(url, timeout=timeout, headers=default_headers)
+            # HTTP errors curl can't improve on — return as-is, no fallback, no noise
+            if res.status_code in (400, 401, 403, 404, 429):
+                _domain_fail_cache.pop(domain, None)
+                return res
             res.raise_for_status()
             # Clear failure cache on success
             _domain_fail_cache.pop(domain, None)
