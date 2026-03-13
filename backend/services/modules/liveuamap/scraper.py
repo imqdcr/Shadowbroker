@@ -43,6 +43,12 @@ def fetch_liveuamap():
                 json_str = base64.b64decode(urllib.parse.unquote(json_str)).decode("utf-8")
 
             markers = json.loads(json_str)
+            # Some regions double-encode: parsed result is a string, not a list
+            if isinstance(markers, str):
+                markers = json.loads(markers)
+            if not isinstance(markers, list):
+                logger.warning(f"Unexpected ovens type for {region['name']}: {type(markers)}")
+                continue
             for marker in markers:
                 mid = marker.get("id")
                 if mid and mid not in seen_ids:

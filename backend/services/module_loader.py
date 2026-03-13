@@ -231,6 +231,8 @@ class ModuleLoader:
                 except Exception as exc:
                     logger.error(f"ModuleLoader: fetch error in '{name}': {exc}", exc_info=True)
 
+            _multi_key_job.__name__ = f"mod:{name}"
+            _multi_key_job.__qualname__ = f"mod:{name}"
             return _multi_key_job
         else:
             key = mod.KEY
@@ -245,6 +247,8 @@ class ModuleLoader:
                 except Exception as exc:
                     logger.error(f"ModuleLoader: fetch error in '{name}': {exc}", exc_info=True)
 
+            _single_key_job.__name__ = f"mod:{name}"
+            _single_key_job.__qualname__ = f"mod:{name}"
             return _single_key_job
 
 
