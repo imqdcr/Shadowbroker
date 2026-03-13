@@ -91,8 +91,3 @@ def fetch_liveuamap():
         
     logger.info(f"Liveuamap scraper finished, extracted {len(all_markers)} unique markers.")
     return all_markers
-
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-    res = fetch_liveuamap()
-    print(json.dumps(res[:3], indent=2))

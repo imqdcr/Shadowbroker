@@ -19,18 +19,11 @@ import threading
 import time
 from datetime import datetime
 
-from services.data_fetcher import (
-    enrich_with_plane_alert,
-    enrich_with_tracked_names,
-    flight_trails,
-    _trails_lock,
-    _MAX_TRACKED_TRAILS,
-    dynamic_routes_cache,
-    routes_fetch_in_progress,
-    fetch_routes_background,
-    _RE_AIRLINE_CODE_1,
-    _RE_AIRLINE_CODE_2,
-    _HELI_TYPES_BACKEND,
+from .enrichment import enrich_with_plane_alert, enrich_with_tracked_names
+from .routes import dynamic_routes_cache, routes_fetch_in_progress, fetch_routes_background
+from .state import (
+    flight_trails, _trails_lock, _MAX_TRACKED_TRAILS,
+    _RE_AIRLINE_CODE_1, _RE_AIRLINE_CODE_2, _HELI_TYPES_BACKEND,
 )
 
 logger = logging.getLogger(__name__)

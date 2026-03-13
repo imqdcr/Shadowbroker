@@ -10,14 +10,17 @@ KEY = "airports"
 TIER = "slow"
 RUN_ONCE = True
 DEFAULT = []
+ENABLED = True
+
+# Module-level cache — shared with anyone who imports from here
+cached_airports: list = []
 
 
 def fetch():
-    # Import the shared cache that find_nearest_airport() reads from data_fetcher
-    import services.data_fetcher as df
-    if df.cached_airports:
-        logger.info(f"Airports: using cached {len(df.cached_airports)} airports")
-        return list(df.cached_airports)
+    global cached_airports
+    if cached_airports:
+        logger.info(f"Airports: using cached {len(cached_airports)} airports")
+        return list(cached_airports)
 
     logger.info("Downloading global airports database from ourairports.com...")
     airports = []
@@ -41,8 +44,21 @@ def fetch():
         logger.error(f"Error fetching airports: {e}")
 
     if airports:
-        # Populate the shared cache so find_nearest_airport() works immediately
-        df.cached_airports.clear()
-        df.cached_airports.extend(airports)
+        cached_airports.clear()
+        cached_airports.extend(airports)
 
     return airports if airports else None
+
+
+def find_nearest_airport(lat: float, lng: float) -> dict | None:
+    """Find the nearest large airport to the given coordinates."""
+    if not cached_airports:
+        return None
+    nearest = None
+    min_dist = float("inf")
+    for apt in cached_airports:
+        dist = (apt["lat"] - lat) ** 2 + (apt["lng"] - lng) ** 2
+        if dist < min_dist:
+            min_dist = dist
+            nearest = apt
+    return nearest

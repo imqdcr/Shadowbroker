@@ -40,7 +40,7 @@ def _generate_machine_assessment(title, description, risk_score):
 
 
 def fetch():
-    from services.news_feed_config import get_feeds
+    from .feed_config import get_feeds
     feed_config = get_feeds()
     feeds = {f["name"]: f["url"] for f in feed_config}
     source_weights = {f["name"]: f["weight"] for f in feed_config}

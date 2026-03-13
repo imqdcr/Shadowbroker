@@ -6,10 +6,11 @@ KEY = "cctv"
 TIER = "custom"
 INTERVAL_MINUTES = 1
 DEFAULT = []
+ENABLED = True
 
 
 def fetch():
-    from services.cctv_pipeline import (
+    from .pipeline import (
         TFLJamCamIngestor, LTASingaporeIngestor,
         AustinTXIngestor, NYCDOTIngestor, get_all_cameras,
     )

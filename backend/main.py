@@ -39,8 +39,8 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from services.data_fetcher import start_scheduler, stop_scheduler, get_latest_data, source_timestamps
-from services.ais_stream import start_ais_stream, stop_ais_stream
-from services.carrier_tracker import start_carrier_tracker, stop_carrier_tracker
+from services.modules.ships.ais_stream import start_ais_stream, stop_ais_stream
+from services.modules.ships.carrier_tracker import start_carrier_tracker, stop_carrier_tracker
 import uvicorn
 import hashlib
 import json as json_mod
@@ -282,7 +282,7 @@ async def api_update_key(body: ApiKeyUpdate):
 # ---------------------------------------------------------------------------
 # News Feed Configuration
 # ---------------------------------------------------------------------------
-from services.news_feed_config import get_feeds, save_feeds, reset_feeds
+from services.modules.news.feed_config import get_feeds, save_feeds, reset_feeds
 
 @app.get("/api/settings/news-feeds")
 async def api_get_news_feeds():
