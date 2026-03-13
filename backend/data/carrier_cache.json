@@ -1,0 +1,112 @@
+{
+  "CVN-68": {
+    "name": "USS Nimitz (CVN-68)",
+    "lat": 21.35,
+    "lng": -157.95,
+    "heading": 270,
+    "desc": "Pacific Fleet / Pearl Harbor",
+    "wiki": "https://en.wikipedia.org/wiki/USS_Nimitz",
+    "source": "Static OSINT estimate",
+    "updated": "2026-03-13T09:46:05.314066+00:00"
+  },
+  "CVN-69": {
+    "name": "USS Dwight D. Eisenhower (CVN-69)",
+    "lat": 18.0,
+    "lng": 39.5,
+    "heading": 120,
+    "desc": "Red Sea / CENTCOM AOR",
+    "wiki": "https://en.wikipedia.org/wiki/USS_Dwight_D._Eisenhower",
+    "source": "Static OSINT estimate",
+    "updated": "2026-03-13T09:46:05.314103+00:00"
+  },
+  "CVN-78": {
+    "name": "USS Gerald R. Ford (CVN-78)",
+    "lat": 34.0,
+    "lng": 25.0,
+    "heading": 90,
+    "desc": "Eastern Mediterranean deterrence",
+    "wiki": "https://en.wikipedia.org/wiki/USS_Gerald_R._Ford",
+    "source": "Static OSINT estimate",
+    "updated": "2026-03-13T09:46:05.314107+00:00"
+  },
+  "CVN-70": {
+    "name": "USS Carl Vinson (CVN-70)",
+    "lat": 15.0,
+    "lng": 115.0,
+    "heading": 45,
+    "desc": "South China Sea patrol",
+    "wiki": "https://en.wikipedia.org/wiki/USS_Carl_Vinson",
+    "source": "Static OSINT estimate",
+    "updated": "2026-03-13T09:46:05.314111+00:00"
+  },
+  "CVN-71": {
+    "name": "USS Theodore Roosevelt (CVN-71)",
+    "lat": 22.0,
+    "lng": 122.0,
+    "heading": 300,
+    "desc": "Philippine Sea / Taiwan Strait",
+    "wiki": "https://en.wikipedia.org/wiki/USS_Theodore_Roosevelt_(CVN-71)",
+    "source": "Static OSINT estimate",
+    "updated": "2026-03-13T09:46:05.314114+00:00"
+  },
+  "CVN-72": {
+    "name": "USS Abraham Lincoln (CVN-72)",
+    "lat": 21.0,
+    "lng": -158.0,
+    "heading": 270,
+    "desc": "Pacific deployment",
+    "wiki": "https://en.wikipedia.org/wiki/USS_Abraham_Lincoln_(CVN-72)",
+    "source": "Static OSINT estimate",
+    "updated": "2026-03-13T09:46:05.314118+00:00"
+  },
+  "CVN-73": {
+    "name": "USS George Washington (CVN-73)",
+    "lat": 35.0,
+    "lng": 139.0,
+    "heading": 0,
+    "desc": "Yokosuka, Japan (Forward deployed)",
+    "wiki": "https://en.wikipedia.org/wiki/USS_George_Washington_(CVN-73)",
+    "source": "Static OSINT estimate",
+    "updated": "2026-03-13T09:46:05.314123+00:00"
+  },
+  "CVN-74": {
+    "name": "USS John C. Stennis (CVN-74)",
+    "lat": 36.95,
+    "lng": -76.33,
+    "heading": 0,
+    "desc": "RCOH / Norfolk (maintenance)",
+    "wiki": "https://en.wikipedia.org/wiki/USS_John_C._Stennis",
+    "source": "Static OSINT estimate",
+    "updated": "2026-03-13T09:46:05.314126+00:00"
+  },
+  "CVN-75": {
+    "name": "USS Harry S. Truman (CVN-75)",
+    "lat": 36.0,
+    "lng": 15.0,
+    "heading": 90,
+    "desc": "Mediterranean deployment",
+    "wiki": "https://en.wikipedia.org/wiki/USS_Harry_S._Truman",
+    "source": "Static OSINT estimate",
+    "updated": "2026-03-13T09:46:05.314129+00:00"
+  },
+  "CVN-76": {
+    "name": "USS Ronald Reagan (CVN-76)",
+    "lat": 47.56,
+    "lng": -122.63,
+    "heading": 0,
+    "desc": "Bremerton, WA (Homeport)",
+    "wiki": "https://en.wikipedia.org/wiki/USS_Ronald_Reagan",
+    "source": "Static OSINT estimate",
+    "updated": "2026-03-13T09:46:05.314132+00:00"
+  },
+  "CVN-77": {
+    "name": "USS George H.W. Bush (CVN-77)",
+    "lat": 36.95,
+    "lng": -76.33,
+    "heading": 0,
+    "desc": "Norfolk, VA (Homeport)",
+    "wiki": "https://en.wikipedia.org/wiki/USS_George_H.W._Bush",
+    "source": "Static OSINT estimate",
+    "updated": "2026-03-13T09:46:05.314135+00:00"
+  }
+}

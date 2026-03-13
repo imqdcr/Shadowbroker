@@ -192,7 +192,7 @@ REGION_COORDS: Dict[str, tuple] = {
 # -----------------------------------------------------------------
 # Cache file for persisting positions between restarts
 # -----------------------------------------------------------------
-CACHE_FILE = Path(__file__).parent.parent / "carrier_cache.json"
+CACHE_FILE = Path(__file__).parent.parent.parent.parent / "data" / "carrier_cache.json"
 
 _carrier_positions: Dict[str, dict] = {}
 _positions_lock = threading.Lock()
