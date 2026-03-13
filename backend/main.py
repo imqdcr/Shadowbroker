@@ -1,7 +1,9 @@
-import os
 import logging
+import os
 
 logging.basicConfig(level=logging.INFO)
+logging.getLogger("apscheduler.executors.default").setLevel(logging.DEBUG)
+logging.getLogger("apscheduler.scheduler").setLevel(logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -35,16 +37,19 @@ for _var in _SECRET_VARS:
         except Exception as _e:
             logger.error(f"Failed to read secret file {_file_path} for {_var}: {_e}")
 
-from fastapi import FastAPI, Request, Response
-from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
-from services.data_fetcher import start_scheduler, stop_scheduler, get_latest_data, source_timestamps
-from services.modules.ships.ais_stream import start_ais_stream, stop_ais_stream
-from services.modules.ships.carrier_tracker import start_carrier_tracker, stop_carrier_tracker
-import uvicorn
 import hashlib
 import json as json_mod
 import socket
+from contextlib import asynccontextmanager
+
+import uvicorn
+from fastapi import FastAPI, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
+from services.data_fetcher import (get_latest_data, source_timestamps,
+                                   start_scheduler, stop_scheduler)
+from services.modules.ships.ais_stream import start_ais_stream, stop_ais_stream
+from services.modules.ships.carrier_tracker import (start_carrier_tracker,
+                                                    stop_carrier_tracker)
 
 
 def _build_cors_origins():
@@ -72,6 +77,7 @@ def _build_cors_origins():
         origins.extend([o.strip() for o in extra.split(",") if o.strip()])
     return list(set(origins))  # deduplicate
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: Start background data fetching, AIS stream, and carrier tracker
@@ -84,9 +90,11 @@ async def lifespan(app: FastAPI):
     stop_scheduler()
     stop_carrier_tracker()
 
+
 app = FastAPI(title="Live Risk Dashboard API", lifespan=lifespan)
 
 from fastapi.middleware.gzip import GZipMiddleware
+
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(
     CORSMiddleware,
@@ -98,26 +106,36 @@ app.add_middleware(
 
 from services.data_fetcher import update_all_data
 
+
 @app.get("/api/refresh")
 async def force_refresh():
     # Force an immediate synchronous update of the data payload
     import threading
+
     t = threading.Thread(target=update_all_data)
     t.start()
     return {"status": "refreshing in background"}
 
+
 @app.get("/api/live-data")
 async def live_data():
     return get_latest_data()
+
 
 def _etag_response(request: Request, payload: dict, prefix: str = "", default=None):
     """Serialize once, hash the bytes for ETag, return 304 or full response."""
     content = json_mod.dumps(payload, default=default)
     etag = hashlib.md5(f"{prefix}{content[:256]}".encode()).hexdigest()[:16]
     if request.headers.get("if-none-match") == etag:
-        return Response(status_code=304, headers={"ETag": etag, "Cache-Control": "no-cache"})
-    return Response(content=content, media_type="application/json",
-                    headers={"ETag": etag, "Cache-Control": "no-cache"})
+        return Response(
+            status_code=304, headers={"ETag": etag, "Cache-Control": "no-cache"}
+        )
+    return Response(
+        content=content,
+        media_type="application/json",
+        headers={"ETag": etag, "Cache-Control": "no-cache"},
+    )
+
 
 @app.get("/api/live-data/fast")
 async def live_data_fast(request: Request):
@@ -136,6 +154,7 @@ async def live_data_fast(request: Request):
         "freshness": dict(source_timestamps),
     }
     return _etag_response(request, payload, prefix="fast|")
+
 
 @app.get("/api/live-data/slow")
 async def live_data_slow(request: Request):
@@ -161,6 +180,7 @@ async def live_data_slow(request: Request):
     }
     return _etag_response(request, payload, prefix="slow|", default=str)
 
+
 @app.get("/api/debug-latest")
 async def debug_latest_data():
     return list(get_latest_data().keys())
@@ -169,6 +189,7 @@ async def debug_latest_data():
 @app.get("/api/health")
 async def health_check():
     import time
+
     d = get_latest_data()
     last = d.get("last_updated")
     return {
@@ -191,37 +212,54 @@ async def health_check():
         "uptime_seconds": round(time.time() - _start_time),
     }
 
+
 _start_time = __import__("time").time()
 
-from services.radio_intercept import get_top_broadcastify_feeds, get_openmhz_systems, get_recent_openmhz_calls, find_nearest_openmhz_system
+from services.radio_intercept import (find_nearest_openmhz_system,
+                                      get_openmhz_systems,
+                                      get_recent_openmhz_calls,
+                                      get_top_broadcastify_feeds)
+
 
 @app.get("/api/radio/top")
 async def get_top_radios():
     return get_top_broadcastify_feeds()
 
+
 @app.get("/api/radio/openmhz/systems")
 async def api_get_openmhz_systems():
     return get_openmhz_systems()
+
 
 @app.get("/api/radio/openmhz/calls/{sys_name}")
 async def api_get_openmhz_calls(sys_name: str):
     return get_recent_openmhz_calls(sys_name)
 
+
 @app.get("/api/radio/nearest")
 async def api_get_nearest_radio(lat: float, lng: float):
     return find_nearest_openmhz_system(lat, lng)
 
+
 from services.radio_intercept import find_nearest_openmhz_systems_list
+
 
 @app.get("/api/radio/nearest-list")
 async def api_get_nearest_radios_list(lat: float, lng: float, limit: int = 5):
     return find_nearest_openmhz_systems_list(lat, lng, limit=limit)
 
+
 from services.network_utils import fetch_with_curl
+
 
 @app.get("/api/route/{callsign}")
 async def get_flight_route(callsign: str, lat: float = 0.0, lng: float = 0.0):
-    r = fetch_with_curl("https://api.adsb.lol/api/0/routeset", method="POST", json_data={"planes": [{"callsign": callsign, "lat": lat, "lng": lng}]}, timeout=10)
+    r = fetch_with_curl(
+        "https://api.adsb.lol/api/0/routeset",
+        method="POST",
+        json_data={"planes": [{"callsign": callsign, "lat": lat, "lng": lng}]},
+        timeout=10,
+    )
     if r and r.status_code == 200:
         data = r.json()
         route_list = []
@@ -229,7 +267,7 @@ async def get_flight_route(callsign: str, lat: float = 0.0, lng: float = 0.0):
             route_list = data.get("value", [])
         elif isinstance(data, list):
             route_list = data
-        
+
         if route_list and len(route_list) > 0:
             route = route_list[0]
             airports = route.get("_airports", [])
@@ -244,33 +282,41 @@ async def get_flight_route(callsign: str, lat: float = 0.0, lng: float = 0.0):
                 }
     return {}
 
+
 from services.region_dossier import get_region_dossier
+
 
 @app.get("/api/region-dossier")
 def api_region_dossier(lat: float, lng: float):
     """Sync def so FastAPI runs it in a threadpool — prevents blocking the event loop."""
     return get_region_dossier(lat, lng)
 
+
 from services.sentinel_search import search_sentinel2_scene
+
 
 @app.get("/api/sentinel2/search")
 def api_sentinel2_search(lat: float, lng: float):
     """Search for latest Sentinel-2 imagery at a point. Sync for threadpool execution."""
     return search_sentinel2_scene(lat, lng)
 
+
+from pydantic import BaseModel
 # ---------------------------------------------------------------------------
 # API Settings — key registry & management
 # ---------------------------------------------------------------------------
 from services.api_settings import get_api_keys, update_api_key
-from pydantic import BaseModel
+
 
 class ApiKeyUpdate(BaseModel):
     env_key: str
     value: str
 
+
 @app.get("/api/settings/api-keys")
 async def api_get_keys():
     return get_api_keys()
+
 
 @app.put("/api/settings/api-keys")
 async def api_update_key(body: ApiKeyUpdate):
@@ -279,14 +325,18 @@ async def api_update_key(body: ApiKeyUpdate):
         return {"status": "updated", "env_key": body.env_key}
     return {"status": "error", "message": "Failed to update .env file"}
 
+
 # ---------------------------------------------------------------------------
 # News Feed Configuration
 # ---------------------------------------------------------------------------
-from services.modules.news.feed_config import get_feeds, save_feeds, reset_feeds
+from services.modules.news.feed_config import (get_feeds, reset_feeds,
+                                               save_feeds)
+
 
 @app.get("/api/settings/news-feeds")
 async def api_get_news_feeds():
     return get_feeds()
+
 
 @app.put("/api/settings/news-feeds")
 async def api_save_news_feeds(request: Request):
@@ -295,10 +345,16 @@ async def api_save_news_feeds(request: Request):
     if ok:
         return {"status": "updated", "count": len(body)}
     return Response(
-        content=json_mod.dumps({"status": "error", "message": "Validation failed (max 20 feeds, each needs name/url/weight 1-5)"}),
+        content=json_mod.dumps(
+            {
+                "status": "error",
+                "message": "Validation failed (max 20 feeds, each needs name/url/weight 1-5)",
+            }
+        ),
         status_code=400,
         media_type="application/json",
     )
+
 
 @app.post("/api/settings/news-feeds/reset")
 async def api_reset_news_feeds():
@@ -306,6 +362,7 @@ async def api_reset_news_feeds():
     if ok:
         return {"status": "reset", "feeds": get_feeds()}
     return {"status": "error", "message": "Failed to reset feeds"}
+
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
