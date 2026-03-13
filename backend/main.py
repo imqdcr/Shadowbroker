@@ -2,8 +2,8 @@ import logging
 import os
 
 logging.basicConfig(level=logging.INFO)
-logging.getLogger("apscheduler.executors.default").setLevel(logging.DEBUG)
-logging.getLogger("apscheduler.scheduler").setLevel(logging.DEBUG)
+logging.getLogger("apscheduler.executors.default").setLevel(logging.WARNING)
+logging.getLogger("apscheduler.scheduler").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------

@@ -434,6 +434,7 @@ def _ais_stream_loop():
         try:
             logger.info("Connecting to AIS Stream WebSocket...")
             ws = websocket.create_connection(AIS_WS_URL, timeout=30)
+            ws.settimeout(90)  # recv timeout separate from connect timeout
             ws.send(_SUBSCRIBE_MSG)
             logger.info("AIS Stream connected — receiving vessel data")
 
@@ -547,7 +548,7 @@ def _ais_stream_loop():
         if _ws_running:
             logger.info(f"AIS Stream reconnecting in {backoff}s...")
             time.sleep(backoff)
-            backoff = min(backoff * 2, 60)
+            backoff = min(backoff * 2, 300)
 
 
 def _run_ais_loop():

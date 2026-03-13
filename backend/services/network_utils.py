@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import shutil
 import subprocess
 import time
@@ -13,24 +14,26 @@ logger = logging.getLogger(__name__)
 
 # Reusable session with connection pooling and retry logic
 _session = requests.Session()
-_retry = Retry(total=2, backoff_factor=0.5, status_forcelist=[502, 503, 504])
+_retry = Retry(total=1, backoff_factor=1.0, status_forcelist=[502, 503, 504])
 _session.mount("https://", HTTPAdapter(max_retries=_retry, pool_maxsize=20))
 _session.mount("http://", HTTPAdapter(max_retries=_retry, pool_maxsize=10))
 
-# Find bash for curl fallback — Git bash's curl has the TLS features
-# needed to pass CDN fingerprint checks (brotli, zstd, libpsl)
-_BASH_PATH = shutil.which("bash") or "bash"
+# Curl fallback is a dev-only workaround for firewalls that block Python TLS.
+# Disabled by default in Docker/production. Set CURL_FALLBACK=1 to enable.
+_CURL_FALLBACK_ENABLED = os.environ.get("CURL_FALLBACK", "0") == "1"
 
 # Cache domains where requests fails — skip straight to curl for 5 minutes
 _domain_fail_cache: dict[str, float] = {}
 _DOMAIN_FAIL_TTL = 300  # 5 minutes
 
+
 class _DummyResponse:
     """Minimal response object matching requests.Response interface."""
+
     def __init__(self, status_code, text):
         self.status_code = status_code
         self.text = text
-        self.content = text.encode('utf-8', errors='replace')
+        self.content = text.encode("utf-8", errors="replace")
 
     def json(self):
         return json.loads(self.text)
@@ -56,16 +59,21 @@ def fetch_with_curl(url, method="GET", json_data=None, timeout=15, headers=None)
     domain = urlparse(url).netloc
 
     # Check if this domain recently failed with requests — skip straight to curl
-    if domain in _domain_fail_cache and (time.time() - _domain_fail_cache[domain]) < _DOMAIN_FAIL_TTL:
+    if (
+        domain in _domain_fail_cache
+        and (time.time() - _domain_fail_cache[domain]) < _DOMAIN_FAIL_TTL
+    ):
         pass  # Fall through to curl below
     else:
         try:
             if method == "POST":
-                res = _session.post(url, json=json_data, timeout=timeout, headers=default_headers)
+                res = _session.post(
+                    url, json=json_data, timeout=timeout, headers=default_headers
+                )
             else:
                 res = _session.get(url, timeout=timeout, headers=default_headers)
             # HTTP errors curl can't improve on — return as-is, no fallback, no noise
-            if res.status_code in (400, 401, 403, 404, 429):
+            if res.status_code in (400, 401, 403, 404, 429, 503):
                 _domain_fail_cache.pop(domain, None)
                 return res
             res.raise_for_status()
@@ -73,8 +81,16 @@ def fetch_with_curl(url, method="GET", json_data=None, timeout=15, headers=None)
             _domain_fail_cache.pop(domain, None)
             return res
         except Exception as e:
-            logger.warning(f"Python requests failed for {url} ({e}), falling back to bash curl...")
+            if not _CURL_FALLBACK_ENABLED:
+                logger.warning(f"Request failed for {url}: {e}")
+                return _DummyResponse(500, "")
+            logger.warning(
+                f"Python requests failed for {url} ({e}), falling back to curl..."
+            )
             _domain_fail_cache[domain] = time.time()
+
+        if not _CURL_FALLBACK_ENABLED:
+            return _DummyResponse(500, "")
 
         # Build curl as argument list — never pass through shell to prevent injection
         _CURL_PATH = shutil.which("curl") or "curl"
@@ -82,24 +98,41 @@ def fetch_with_curl(url, method="GET", json_data=None, timeout=15, headers=None)
         for k, v in default_headers.items():
             cmd += ["-H", f"{k}: {v}"]
         if method == "POST" and json_data:
-            cmd += ["-X", "POST", "-H", "Content-Type: application/json",
-                    "--data-binary", "@-"]
+            cmd += [
+                "-X",
+                "POST",
+                "-H",
+                "Content-Type: application/json",
+                "--data-binary",
+                "@-",
+            ]
         cmd.append(url)
 
         try:
-            stdin_data = json.dumps(json_data) if (method == "POST" and json_data) else None
+            stdin_data = (
+                json.dumps(json_data) if (method == "POST" and json_data) else None
+            )
             res = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=timeout + 5,
-                input=stdin_data
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout + 5,
+                input=stdin_data,
             )
             if res.returncode == 0 and res.stdout.strip():
                 # Parse HTTP status code from -w output (last line)
                 lines = res.stdout.rstrip().rsplit("\n", 1)
                 body = lines[0] if len(lines) > 1 else res.stdout
-                http_code = int(lines[-1]) if len(lines) > 1 and lines[-1].strip().isdigit() else 200
+                http_code = (
+                    int(lines[-1])
+                    if len(lines) > 1 and lines[-1].strip().isdigit()
+                    else 200
+                )
                 return _DummyResponse(http_code, body)
             else:
-                logger.error(f"bash curl fallback failed: exit={res.returncode} stderr={res.stderr[:200]}")
+                logger.error(
+                    f"bash curl fallback failed: exit={res.returncode} stderr={res.stderr[:200]}"
+                )
                 return _DummyResponse(500, "")
         except Exception as curl_e:
             logger.error(f"bash curl fallback exception: {curl_e}")
