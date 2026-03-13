@@ -330,6 +330,11 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
     const [shipClusters, setShipClusters] = useState<any[]>([]);
     const [eqClusters, setEqClusters] = useState<any[]>([]);
 
+    // Global Incidents popup: dismiss state
+    // Keys use stable content hash (title+coords) to survive data.news array replacement on refresh
+    // NOTE: Using Set (not Map) to avoid collision with the `Map` react-map-gl import
+    const [dismissedAlerts, setDismissedAlerts] = useState<Set<string>>(new Set());
+
     // --- Smooth interpolation: tick counter triggers GeoJSON recalc every second ---
     const [interpTick, setInterpTick] = useState(0);
     const dataTimestamp = useRef<number>(Date.now());
@@ -1911,17 +1916,20 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
                 {/* Maplibre HTML Custom Markers for high-importance Threat Overlays (highest z-index) */}
                 {activeLayers.global_incidents && spreadAlerts.map((n: any) => {
                     const idx = n.originalIdx;
+                    // Stable key: survives data.news array reorder/replacement across polling cycles
+                    const alertKey = `${n.title || ''}_${(n.coords || []).join(',')}`;
+                    if (dismissedAlerts.has(alertKey)) return null;
+
                     const count = n.cluster_count || 1;
                     const score = n.risk_score || 0;
 
-                    let riskColor = '#22c55e'; // Green (1-3)
-                    if (score >= 9) riskColor = '#ef4444'; // Red (9-10)
-                    else if (score >= 7) riskColor = '#f97316'; // Orange (7-8)
-                    else if (score >= 4) riskColor = '#eab308'; // Yellow (4-6)
-                    else if (score >= 1) riskColor = '#3b82f6'; // Blue (1-3)
+                    let riskColor = '#22c55e'; // Green (0)
+                    if (score >= 9) riskColor = '#ef4444'; // Red
+                    else if (score >= 7) riskColor = '#f97316'; // Orange
+                    else if (score >= 4) riskColor = '#eab308'; // Yellow
+                    else if (score >= 1) riskColor = '#3b82f6'; // Blue
 
                     // Hide alerts when any entity is selected (focus mode)
-                    // For news: only show the selected alert. For all others: hide all alerts.
                     let isVisible = viewState.zoom >= 1;
                     if (selectedEntity) {
                         if (selectedEntity.type === 'news') {
@@ -1933,7 +1941,7 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
 
                     return (
                         <Marker
-                            key={`threat-${idx}`}
+                            key={`threat-${alertKey}`}
                             longitude={n.coords[1]}
                             latitude={n.coords[0]}
                             anchor="center"
@@ -1945,7 +1953,7 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
                             }}
                         >
                             <div className="relative group/alert">
-                                {/* Connector Line for scattered markers (Speech Bubble Line) */}
+                                {/* Connector Line */}
                                 {n.showLine && isVisible && (
                                     <svg className="absolute pointer-events-none" style={{ left: '50%', top: '50%', width: 1, height: 1, overflow: 'visible', zIndex: -1 }}>
                                         <line x1={0} y1={0} x2={-n.offsetX} y2={-n.offsetY} stroke={riskColor} strokeWidth="1.5" strokeDasharray="3,3" className="opacity-80" />
@@ -1961,7 +1969,7 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
                                         backgroundColor: 'rgba(5, 5, 5, 0.95)',
                                         border: `1.5px solid ${riskColor}`,
                                         borderRadius: '4px',
-                                        padding: '5px 8px',
+                                        padding: '5px 24px 5px 8px',
                                         color: riskColor,
                                         fontFamily: 'monospace',
                                         fontSize: '9px',
@@ -1970,10 +1978,11 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
                                         boxShadow: `0 0 12px ${riskColor}60`,
                                         zIndex: 10,
                                         lineHeight: '1.2',
-                                        minWidth: '120px'
+                                        minWidth: '120px',
+                                        position: 'relative',
                                     }}
                                 >
-                                    {/* Bubble Tail / Triangle */}
+                                    {/* Bubble Tail */}
                                     {n.showLine && isVisible && (
                                         <div
                                             className="absolute"
@@ -1982,7 +1991,6 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
                                                 height: 0,
                                                 borderLeft: '6px solid transparent',
                                                 borderRight: '6px solid transparent',
-                                                // If above origin, point down. If below, point up.
                                                 borderTop: n.offsetY < 0 ? `6px solid ${riskColor}` : 'none',
                                                 borderBottom: n.offsetY > 0 ? `6px solid ${riskColor}` : 'none',
                                                 left: '50%',
@@ -1991,6 +1999,33 @@ const MaplibreViewer = ({ data, activeLayers, onEntityClick, flyToLocation, sele
                                             }}
                                         />
                                     )}
+
+                                    {/* Dismiss button */}
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setDismissedAlerts(prev => new Set(prev).add(alertKey));
+                                            if (selectedEntity?.type === 'news' && selectedEntity.id === idx) {
+                                                onEntityClick?.(null);
+                                            }
+                                        }}
+                                        aria-label="Dismiss alert"
+                                        style={{
+                                            position: 'absolute',
+                                            top: '3px',
+                                            right: '4px',
+                                            background: 'none',
+                                            border: 'none',
+                                            color: riskColor,
+                                            cursor: 'pointer',
+                                            fontSize: '11px',
+                                            lineHeight: 1,
+                                            padding: '0 2px',
+                                            opacity: 0.8,
+                                        }}
+                                    >
+                                        ×
+                                    </button>
 
                                     <div className="absolute inset-0 border border-current rounded opacity-50 animate-pulse" style={{ color: riskColor, zIndex: -1 }}></div>
                                     <div style={{ fontSize: '10px', letterSpacing: '0.5px' }}>!! ALERT LVL {score} !!</div>
