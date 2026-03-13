@@ -172,17 +172,9 @@ async def health_check():
         "status": "ok",
         "last_updated": last,
         "sources": {
-            "flights": len(d.get("commercial_flights", [])),
-            "military": len(d.get("military_flights", [])),
-            "ships": len(d.get("ships", [])),
-            "satellites": len(d.get("satellites", [])),
-            "earthquakes": len(d.get("earthquakes", [])),
-            "cctv": len(d.get("cctv", [])),
-            "news": len(d.get("news", [])),
-            "uavs": len(d.get("uavs", [])),
-            "firms_fires": len(d.get("firms_fires", [])),
-            "liveuamap": len(d.get("liveuamap", [])),
-            "gdelt": len(d.get("gdelt", [])),
+            k: len(v)
+            for k, v in d.items()
+            if isinstance(v, list) and k != "last_updated"
         },
         "freshness": dict(source_timestamps),
         "uptime_seconds": round(time.time() - _start_time),
